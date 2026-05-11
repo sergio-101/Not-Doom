@@ -39,18 +39,21 @@ let TEXTURES_COLLECTION = {
     }),
     "enemy-idle": new Array(61).fill("").map((_, k)=> {
          return (new Sprite("sprites/Enemy/IDLEING/S/STORMTROOPER" + (k).toString().padStart(4, '0') + ".png"));
-    })
+    }),
+    "hurt": new Array(7).fill("").map((_, k)=> {
+         return (new Sprite("sprites/Hurt/" + (k).toString() + ".png"));
+    }),
+    "Enemy-FIRING": new Array(9).fill("").map((_, k) =>  new Sprite("sprites/Enemy/FIRING/STORMTROOPER" + (k).toString().padStart(4, '0') + ".png")),
+    "Enemy-FALLING": new Array(61).fill("").map((_, k) => new Sprite("sprites/Enemy/FALLING/STORMTROOPER" + (k).toString().padStart(4, '0') + ".png"))
 };
 
 // LOAD ENEMY SPRITES
-const ENEMY_STATE = [["IDLEING", 60], ["WALKING", 40], ["FIRING", 8], ["FALLING", 60]]
-// const DIRECTIONS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
-// const DIRECTIONS = ["E", "NE", "N", "NW", "W", "SW", "S", "SE"];
+const ENEMY_STATE = [["IDLEING", 60], ["WALKING", 40]]
 const DIRECTIONS = ["S", "SE", "E", "NE", "N", "NW", "W", "SW"];
 for(state of ENEMY_STATE){
     for(dir of DIRECTIONS){
         TEXTURES_COLLECTION[`Enemy-${state[0]}-${dir}`] = [];
-        for(let x = 1; x <= 5; x++){
+        for(let x = 1; x <= state[1]; x++){
             TEXTURES_COLLECTION[`Enemy-${state[0]}-${dir}`].push(new Sprite(`sprites/Enemy/${state[0]}/${dir}/STORMTROOPER${(x).toString().padStart(4, '0')}.png`));
         }
     }
@@ -62,7 +65,7 @@ let TEXTURES = {
     Weapons: Object(),
     Enemy: {},
 };
-const WEAPONS = [{name: "Shotgun", fire_time: 0.3, reload_time: 0.9, recoil: 0.02}, {name: "AR", fire_time: 0, reload_time: 0.9, recoil: 0.01}];
+const WEAPONS = [{name: "Shotgun", fire_time: 0.3, reload_time: 0.9, recoil: 0.02, range: 3, attack: 80, rof: 0.7}, {name: "AR", fire_time: 0, reload_time: 0.9, recoil: 0.01, range: 3, attack: 5, rof: 0.001}];
 
 for(wp of WEAPONS){
     TEXTURES.Weapons[wp.name] = {
@@ -138,18 +141,59 @@ class Enemy {
     pos;
     dir;
     dir_vector;
-    state = "IDLEING";
+    mode = "IDLE";
     frame_counter = 0;
+    next_walk_start = 0;
+    speed = 1;
+    wandering_speed = 1;
+    locked_speed = 3;
+    hp = 100;
+    reach = null;
+    dist_sq_from_player;
+    hurt = false;
+    dead = false;
     constructor(x, y){
         this.pos = new Vector2(x, y);
         this.dir = 2 * Math.PI * Math.random();
         this.dir_vector = new Vector2(Math.cos(this.dir), Math.sin(this.dir));
-
     }
     rel_direction(Player){
-        this.dir_vector = new Vector2(Math.cos(this.dir), Math.sin(this.dir));
         const angle_rel = Player.position.sub(this.pos).normalize();
         return DIRECTIONS[(angle_rel.get_octant() - this.dir_vector.normalize().get_octant() + 8) % 8];
+    }
+    update_dir_vector(){
+        this.dir_vector = new Vector2(Math.cos(this.dir), Math.sin(this.dir));
+    }
+    get_sprite_state(){
+        if(this.mode == "WALK") {
+            return "WALKING"
+        }
+        if(this.mode == "IDLE"){
+            return "IDLEING"
+        }
+        if(this.mode == "FIRE"){
+            return "FIRING"
+        }
+        if(this.mode == "DIE"){
+            return "FALLING"
+        }
+    }
+    get_current_sprite(Player){
+        const state = this.get_sprite_state();
+        const dir = this.rel_direction(Player)
+        const textures_arr = (state == "WALKING" || state == "IDLEING") ? TEXTURES.Enemy[state][dir]: TEXTURES.Enemy[state];
+        const texture = textures_arr[this.frame_counter % textures_arr.length].img
+        return texture;
+    }
+    update_sprite(){
+        this.frame_counter += this.mode !== "DIE" ? this.speed: 1;
+        const state = this.get_sprite_state();
+        const textures_arr = (state == "WALKING" || state == "IDLEING") ? TEXTURES.Enemy[state][dir]: TEXTURES.Enemy[state];
+        if(textures_arr.length <= this.frame_counter) {
+            if(this.mode == "DIE") {
+                this.dead = true;
+            }
+        }
     }
 }
 class Player {
@@ -168,6 +212,12 @@ class Player {
     turning_speed = 0.04;
     gun_arm_speed = 0.007;
     last_sprite_time = 0;
+    hp = 100;
+    hurt = false;
+    hurt_frame_counter = 0;
+    trying_fire = false;
+    can_fire = true;
+    cant_fire_until = 0;
     constructor (position, dir){
         this.position = position;
         this.dir = dir;
@@ -177,17 +227,16 @@ class Player {
     }
 }
 
-const ctx = canvas.getContext("2d");
+const ctx = canvas.getContext("2d", {willReadFrequently: true} );
 canvas.width = 320;
 canvas.height = 200;
 canvas.style.imageRendering = "pixelated";
 let COLS;
 let ROWS;
 let STATE = {
-    Enemy: [],
-    // "shotgun-fire": new Array(10).fill("").map((_, k)=> {
-    //      return (new Sprite("sprites/SG-Fire/" + (k).toString() + ".png"));
-    // }),
+    Enemy: [
+        // new Enemy(10.5, 2.5)
+    ],
     highlight: {},
     keys: {
         keya: false, 
@@ -198,7 +247,9 @@ let STATE = {
         keyq: false,
         arrowleft: false,
         arrowright: false
-    }
+    },
+    running: true,
+    message: ""
 };
 
 function draw_circle(p1, r, color) {
@@ -216,11 +267,7 @@ function draw_line(p1, p2, color) {
     ctx.lineTo(p2.x, p2.y); 
     ctx.stroke();
 }
-function cast_ray(w_px, dx){
-    const Player = STATE.Player;
-    let pos = {...Player.position};
-    if(dx == undefined) dx = w_px/(canvas.width/2) - 1;
-    let delta = Player.dir_vector.add(Player.plane.scale(dx)); 
+function cast_ray(pos, delta){
     let step = new Vector2();
     let side_dist = new Vector2();
     let current_block = new Vector2(Math.floor(pos.x), Math.floor(pos.y))
@@ -287,9 +334,17 @@ function cast_ray(w_px, dx){
         perp_dist,
         side,
         block : type === "WALL" ? current_block : null,
-        hit_cords: Player.position.add(delta.normalize().scale(dist)),
+        hit_cords: pos.add(delta.normalize().scale(dist)),
     }
-
+}
+// w_px is wrt the screen
+// dx is wrt to the plane
+function cast_ray_from_player(w_px, dx){
+    const Player = STATE.Player;
+    let pos = Player.position;
+    if(dx == undefined) dx = w_px/(canvas.width/2) - 1;
+    let delta = Player.dir_vector.add(Player.plane.scale(dx)); 
+    return cast_ray(pos, delta);
 }
 addEventListener("keyup", (e) => {
     if(Object.keys(STATE.keys).includes(e.code.toLowerCase())) STATE.keys[e.code.toLowerCase()] = false;
@@ -310,50 +365,59 @@ addEventListener("mousemove", e => {
 addEventListener("mousedown", e => {
     if(document.pointerLockElement === canvas){
         let Player = STATE.Player;
-        Player.fire = true;
+        Player.trying_fire = true;
     }
 });
 addEventListener("mouseup", e => {
     if(document.pointerLockElement === canvas){
         let Player = STATE.Player;
-        Player.fire = false;
+        Player.trying_fire = false;
     }
 });
 function minimap(w, h){
+    ctx.fillStyle = "rgba(10, 10, 10, 0.8)";
+    ctx.fillRect(0, 0, w, h);
     ctx.save()
-    ctx.scale(w/COLS, h/ROWS);
-    ctx.lineWidth = 0.5;
+    ctx.scale(w/8, h/8);
+    // ctx.scale(canvas.width/COLS, canvas.height/ROWS);
+    ctx.lineWidth = 0.1;
 
     let Player = STATE.Player;
-    ctx.fillStyle = "black";
-    ctx.fillRect(0, 0, COLS, ROWS);
+
     let P = STATE.Player;
+
     // all the blocks on the minimap
-    for(let row = 0; row < ROWS; ++row){
-        for(let col = 0; col < COLS; ++col){
-            ctx.fillStyle = "red";
-            if(STATE.Scene[col][row]) ctx.fillRect(row, col, 1, 1);
+    const row_start = Math.floor(Math.max(0, P.position.x - 4))
+    const col_start = Math.floor(Math.max(0, P.position.y - 4))
+    const adjust = ({x, y}) => ({x: x - row_start, y: y - col_start})
+    for(let row = row_start, x = 0; row < Math.min(ROWS, row_start + 8); ++row, ++x){
+        for(let col = col_start, y = 0; col < Math.min(COLS, col_start + 8); ++col, ++y){
+            ctx.fillStyle = "grey";
+            if(STATE.Scene[col][row]) ctx.fillRect(row - row_start, col - col_start, 1, 1);
         }
     }
-
-    const a = P.position.add(P.plane);
-    const c = P.position.add(P.plane.scale(-1));
-    const b = P.position.add(P.dir_vector);
+    const adjusted_player_pos = adjust(P.position); 
+    draw_circle({x: adjusted_player_pos.x , y: adjusted_player_pos.y }, 0.2, "cyan")
+    if(STATE.Highlight)draw_circle(adjust(STATE.Highlight), 0.2, "pink")
+    const a = adjust(P.position.add(P.plane));
+    const c = adjust(P.position.add(P.plane.scale(-1)));
+    const b = adjust(P.position.add(P.dir_vector));
     draw_line(b, a, "yellow");
     draw_line(b, c, "yellow");
-    draw_line(a, c, "yellow");
 
     for(hit of STATE.ray_hits){
-        draw_circle(hit.hit_cords, 0.2, "cyan")
+        const cord = adjust(hit.hit_cords);
+        if(cord.x <  8 && cord.y < 8) {
+            draw_circle(cord, 0.05, "cyan");
+        }
     } 
-    // for(let e of STATE.Enemy){
-    //     draw_circle(e.pos, 0.2, "cyan")
-    //     draw_line(e.pos, e.pos.add(e.dir_vector), "yellow");
-    //
-    // }
-    if(STATE.highlight){
-        draw_line(Player.position, STATE.highlight, "blue");
-        draw_circle(STATE.highlight, 0.4, "pink")
+    for(let e of STATE.Enemy){
+        const cord = adjust(e.pos);
+        if(!e.dead && cord.x <  8 && cord.y < 8) {
+            draw_circle(cord, 0.2, "red");
+            draw_line(cord, adjust(e.pos.add(e.dir_vector)), "yellow");
+        }
+
     }
     ctx.restore();
 }
@@ -395,7 +459,7 @@ function render_floor(){
     ctx.putImageData(image_data, 0, 0);
 }
 function render_walls(){
-    const center_hit = cast_ray(0); 
+    const center_hit = cast_ray_from_player(0); 
     for(let i = 0; i < canvas.width; i++){
         let hit = STATE.ray_hits[i];
         if(hit.block){
@@ -499,20 +563,18 @@ function lines_intersect_2d(p0, p1, p2, p3) {
 // > scan the pixel data and look for which has the rgb data of more than 0 (can be cached, will not do, because who cares about optim. anyways)
 // > reduce the pixels alpha channel from the main canvas which corresponds to co-ord found in the previous step
 function render_enemies(){
-    const center_hit = cast_ray(0); 
+    const center_hit = cast_ray_from_player(0); 
     const Player = STATE.Player;
     const a = Player.dir_vector.add(Player.plane.scale(-1));
     const c = Player.dir_vector.add(Player.plane);
-    const t_x = 200; const t_y = 110; const t_w = 125; const t_h = 335; 
     const offscreen = document.createElement("canvas");
-    const ctx_off = offscreen.getContext("2d");
+    const ctx_off = offscreen.getContext("2d", {willReadFrequently: true});
 
     for(let e of STATE.Enemy){
+        if(e.dead) continue;
         const b = e.pos.sub(Player.position);
-        const dir = e.rel_direction(Player)
-        const textures_arr = TEXTURES.Enemy[e.state][dir];
-        if(textures_arr.length <= e.frame_counter) e.frame_counter = 0;
-        const texture = textures_arr[e.frame_counter].img
+        const texture = e.get_current_sprite(Player);  
+        const t_x = 0; const t_y = 110; const t_w = texture.width; const t_h = 335; 
         if(a.cross(b) * a.cross(c) >= 0 && c.cross(b) * c.cross(a) >= 0){
             const intersect = lines_intersect_2d(
                 {x: 0, y: 0}, b.scale(5), 
@@ -520,22 +582,29 @@ function render_enemies(){
             )
             if(intersect){
                 const dist = b.mag();
+                // 0 - 2;
                 const cut_plane_in_ratio = a.dist(intersect);
-                const pos = cast_ray(null, cut_plane_in_ratio - 1);
+                const dir_to_cast = Player.dir_vector.add(Player.plane.scale(cut_plane_in_ratio - 1));
+                const pos = cast_ray(Player.position, dir_to_cast)
                 if(dist <= pos.dist){
                     ctx_off.clearRect(0, 0, offscreen.width, offscreen.height);
                     const aspect_correction = center_hit.perp_dist / center_hit.dist;
                     let sp_h = Math.ceil((canvas.height * aspect_correction) / b.dot(Player.dir_vector));
-                    let sp_w = Math.ceil(sp_h/2.5);
+                    let sp_w = Math.ceil(sp_h*1.5);
                     const sx = cut_plane_in_ratio * canvas.width/2 - sp_w/2;
                     const sy = canvas.height/2 - sp_h/2;
                     ctx.drawImage(texture, t_x, t_y, t_w, t_h, sx, sy, sp_w, sp_h)
-
                     offscreen.width = sp_w;
                     offscreen.height = sp_h;
                     ctx_off.drawImage( texture, t_x, t_y, t_w, t_h, 0, 0, sp_w, sp_h );
                     let max_vision = 1; 
                     let darkness_coeff = Math.min((max_vision/dist) ** (2), 1); 
+
+                    ctx.fillStyle = `rgba(0, 0, 255, ${Math.min(1,darkness_coeff)})`;
+                    ctx.font = `bold ${Math.floor(sp_w/6)}px Arial`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(e.hp, sx + sp_w/2, sy - 10);
                     const enemy_data = ctx_off.getImageData(0, 0, offscreen.width, offscreen.height).data;
                     const saved = ctx.getImageData(0, 0, canvas.width, canvas.height).data;                   
                     let offset = Math.floor(sy) * canvas.width + Math.floor(sx);
@@ -551,22 +620,133 @@ function render_enemies(){
                     }
                     const data = new ImageData(saved, canvas.width, canvas.height)
                     ctx.putImageData(data, 0, 0);
-                    e.frame_counter++;
                 }
             }
         };
     }
 }
-let last_frame = 0;
-function game_loop(ctime){
-    let delta = (ctime - last_frame)/1000;
-    ctx.fillStyle = 'rgb(20, 0, 20)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height/2);  
+function update_enemies(ctime){
+    const Player = STATE.Player;
+    const LOCK_RANGE = 2;
+    const FIRE_RANGE = 1.5;
+    Player.hurt = false;
+    for(let e of STATE.Enemy){
+        e.update_sprite();
+        if(e.mode == "DIE" || e.dead) continue;
+        if(e.dead) continue;
 
-    ctx.fillStyle = 'rgb(60, 0, 60)';
-    ctx.fillRect(0, canvas.height/2, canvas.width, canvas.height);
+        e.dist_sq_from_player = e.pos.dist_sq(Player.position);
+        if(e.dist_sq_from_player < LOCK_RANGE * LOCK_RANGE){
+            const p_to_e_vector = Player.position.sub(e.pos).normalize();
+            const p_to_e_ray = cast_ray(Player.position, p_to_e_vector.scale(-1)); 
+            if(Player.position.dist_sq(e.pos) < p_to_e_ray.dist*p_to_e_ray.dist){
+                e.dir_vector = p_to_e_vector;
+                if(e.dist_sq_from_player < FIRE_RANGE * FIRE_RANGE){
+                    e.mode = "FIRE"
+                }
+                else{
+                    e.reach = Player.position;
+                    e.mode = "WALK"
+                    e.speed = e.locked_speed;
+                }
+            }
+            else{
+                e.mode = "IDLE";
+                const duration = 0 *  1000;
+                e.next_walk_start = ctime + duration;
+                e.frame_counter = 0;
+            }
+        }
+        else{
+            if(e.mode == "IDLE" && e.next_walk_start < ctime){
+                e.mode = "WALK"
+                e.speed = e.wandering_speed;
+                e.dir += Math.random() * 2 * Math.PI;
+                e.update_dir_vector()
+                let res = cast_ray(e.pos, e.dir_vector);
+                e.reach = e.pos.add(e.dir_vector.scale(Math.random() * res.dist));
+                e.frame_counter = 0;
+            }
+            if(e.mode == "WALK"){
+                if(e.pos.dist_sq(e.reach) < 0.25){
+                    e.mode = "IDLE";
+                    const duration = Math.floor(Math.random() * 5) *  1000;
+                    e.next_walk_start = ctime + duration;
+                    e.frame_counter = 0;
+                }
+            }
+        }
+        if(e.mode == "WALK"){
+            const next_pos = e.pos.add(e.dir_vector.scale(e.speed/100));
+            if(!STATE.Scene[Math.floor(next_pos.y)][Math.floor(next_pos.x)]) e.pos = next_pos;
+        }
+        if(e.mode == "FIRE"){
+            Player.hurt = true;
+        }
+    }
+    STATE.Enemy = STATE.Enemy.sort((a,b) => b.dist_sq_from_player - a.dist_sq_from_player);
+}
+function handle_fire(ctime){
+    const Player = STATE.Player;
+    const weapon = WEAPONS[Player.weapon]; 
+    const shot_width = 0.1;
+    const a = Player.dir_vector.add(Player.plane.scale(-shot_width));
+    const c = Player.dir_vector.add(Player.plane.scale(shot_width));
+    const range_sq = weapon.range * weapon.range;
+    if(Player.state == "Fire" && Player.can_fire){
+        for(let i = STATE.Enemy.length - 1; 0 <= i; --i){
+            const e = STATE.Enemy[i];
+            if(range_sq < e.dist_sq_from_player) break;
+            if(e.mode == "DIE" || e.dead) continue;
 
-    let Player = STATE.Player;
+            const p_to_e = e.pos.sub(Player.position);
+            if(a.cross(p_to_e) * a.cross(c) >= 0 && c.cross(p_to_e) * c.cross(a) >= 0) {
+                const p_to_e_ray = cast_ray(Player.position, p_to_e); 
+                const p_e_dist_sq = e.dist_sq_from_player; 
+                if(p_e_dist_sq < p_to_e_ray.dist * p_to_e_ray.dist){
+                    const reduce_hp = Math.floor(((weapon.attack * (range_sq - p_e_dist_sq))/(range_sq)));
+                    e.hp -= Math.min(e.hp, reduce_hp);
+                    e.hurt = true;
+                    if(e.hp <= 0) {
+                        e.mode = "DIE";
+                        e.frame_counter = 0;
+                    }
+                }
+            }
+
+        }
+        Player.can_fire = false;
+        Player.cant_fire_until = ctime + weapon.rof * 1000; 
+    }
+}
+function show_end_screen(){
+    const screen_padd = 20;
+    ctx.fillStyle = 'rgb(20, 0, 20, 0.7)';
+    ctx.fillRect(screen_padd, screen_padd, canvas.width - screen_padd * 2, canvas.height - screen_padd * 2);  
+
+    ctx.fillStyle = `rgba(255, 0, 255)`;
+    ctx.font = `bold 20px Arial`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(STATE.message, canvas.width/2, canvas.height/2);
+}
+function render_player(){
+    const Player = STATE.Player;
+    if(Player.hurt){
+        const hurt = TEXTURES.Hurt[Player.hurt_frame_counter++ % TEXTURES.Hurt.length].img;
+        ctx.drawImage(hurt, 0, 0, hurt.width, hurt.height, 0, 0, canvas.width, canvas.height);
+    }
+    ctx.fillStyle = "rgba(255, 0, 0, 0.4)"      
+    ctx.fillRect(0, 80, 15, canvas.height - 80)
+
+    const h = canvas.height - 80;
+    const fill_px = (h * Player.hp)/100;
+    ctx.fillStyle = "rgba(200, 0, 0, 1)"      
+    ctx.fillRect(0, 80 + h - fill_px, 15, fill_px)
+}
+function update_player(ctime){
+    const Player = STATE.Player;
+    const delta = (ctime - last_frame)/1000;
     let new_pos;
 
     if(["keya", "keyd", "keyw", "keys"].map((key) => STATE.keys[key]).some(Boolean)) 
@@ -598,8 +778,10 @@ function game_loop(ctime){
             Player.state = "Switch"
             Player.speed = Player.gun_arm_speed;
         }
-
-        if(Player.fire){
+    }
+    if(Player.trying_fire){
+        if(Player.can_fire || (!Player.can_fire && Player.cant_fire_until < ctime)){
+            Player.can_fire = true;
             Player.state = "Fire"
             Player.speed = Player.gun_arm_speed;
             // recoil
@@ -616,11 +798,29 @@ function game_loop(ctime){
             Player.position = new_pos;
         }
     }
+    if(Player.hurt){
+        Player.hp -= Math.floor(delta * 20);
+        if(Player.hp <= 0){
+            STATE.running = false;
+            STATE.message = "GAME OVER!";
+        }
+    }
+}
+let last_frame = 0;
+function game_loop(ctime){
+    if(!STATE.running){
+        show_end_screen();
+        return;
+    }
 
+    ctx.fillStyle = 'rgb(20, 0, 20)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);  
+
+    update_player(ctime)
     // Ray casting
     STATE.ray_hits = [];
     for(let x = 0; x < canvas.width; x++) {
-        let res = cast_ray(x);
+        let res = cast_ray_from_player(x);
         if(res){
             STATE.ray_hits.push(res)
         }
@@ -628,12 +828,14 @@ function game_loop(ctime){
             throw new Error("Ray casting failed for some reason.")
         }
     }
+    update_enemies(ctime)
+    handle_fire(ctime);
     render_floor();
     render_walls();
     render_enemies();
+    render_player();
     render_weapon(ctime);
-    // minimap(150, 150)
-    minimap(50, 50)
+    minimap(75, 75)
     last_frame = ctime;
     requestAnimationFrame(game_loop)
 }
@@ -653,13 +855,19 @@ async function main(){
     TEXTURES.Walls = TEXTURES.Walls.concat(...new Array(4).fill(TEXTURES_COLLECTION["wall"][0]));
     TEXTURES.Walls = TEXTURES.Walls.concat(...new Array(5).fill(TEXTURES_COLLECTION["wall"][1]));
     TEXTURES.Floor = TEXTURES_COLLECTION["floor"][0];
+    TEXTURES.Hurt = TEXTURES_COLLECTION["hurt"];
+    
+    TEXTURES.Enemy["FALLING"] = TEXTURES_COLLECTION["Enemy-FALLING"]
+    TEXTURES.Enemy["FIRING"] = TEXTURES_COLLECTION["Enemy-FIRING"]
 
     for([key, val] of Object.entries(TEXTURES_COLLECTION)){
         if(key.includes("Enemy")){
-            // ENEMY-FIRING-SW-0001.png
+            // ENEMY-FIRING-SW
             key = key.split("-");
-            if(!TEXTURES.Enemy[key[1]]) TEXTURES.Enemy[key[1]] = {}
-            TEXTURES.Enemy[key[1]][key[2]] = val;
+            if(key.length == 3){
+                if(!TEXTURES.Enemy[key[1]]) TEXTURES.Enemy[key[1]] = {}
+                TEXTURES.Enemy[key[1]][key[2]] = val;
+            }
         }
     }
     const floor = TEXTURES.Floor.img;
