@@ -65,7 +65,10 @@ let TEXTURES = {
     Weapons: Object(),
     Enemy: {},
 };
-const WEAPONS = [{name: "Shotgun", fire_time: 0.3, reload_time: 0.9, recoil: 0.02, range: 3, attack: 80, rof: 0.7}, {name: "AR", fire_time: 0, reload_time: 0.9, recoil: 0.01, range: 3, attack: 5, rof: 0.001}];
+const WEAPONS = [{name: "Shotgun", fire_time: 0.4, reload_time: 2, recoil: 0.02, range: 3, attack: 80, rof: 0.4}, {name: "AR", fire_time: 0.2, reload_time: 2, recoil: 0.01, range: 3, attack: 5, rof: 0.001}];
+
+// dirty implementation for LIMITED BULLETS
+let BULLETS = [[6, 6], [60, 60]];
 
 for(wp of WEAPONS){
     TEXTURES.Weapons[wp.name] = {
@@ -145,8 +148,8 @@ class Enemy {
     frame_counter = 0;
     next_walk_start = 0;
     speed = 1;
-    wandering_speed = 1;
-    locked_speed = 3;
+    wandering_speed = 1.5;
+    locked_speed = 4;
     hp = 100;
     reach = null;
     dist_sq_from_player;
@@ -182,18 +185,23 @@ class Enemy {
         const state = this.get_sprite_state();
         const dir = this.rel_direction(Player)
         const textures_arr = (state == "WALKING" || state == "IDLEING") ? TEXTURES.Enemy[state][dir]: TEXTURES.Enemy[state];
-        const texture = textures_arr[this.frame_counter % textures_arr.length].img
+        const texture = textures_arr[this.frame_counter].img
         return texture;
     }
-    update_sprite(){
-        this.frame_counter += this.mode !== "DIE" ? this.speed: 1;
+    update_sprite(delta){
         const state = this.get_sprite_state();
         const textures_arr = (state == "WALKING" || state == "IDLEING") ? TEXTURES.Enemy[state][dir]: TEXTURES.Enemy[state];
+        const ENEMY_DYING_DURATION = 1.5;
+        const ENEMY_REGULAR_SPRITE_DURATION = 2;
+        const total_time = this.mode === "DIE"? ENEMY_DYING_DURATION : ENEMY_REGULAR_SPRITE_DURATION/this.speed;
+        let frame_inc = Math.floor((textures_arr.length * delta) / (total_time * 1000));
+        this.frame_counter += frame_inc;
         if(textures_arr.length <= this.frame_counter) {
             if(this.mode == "DIE") {
                 this.dead = true;
             }
         }
+        this.frame_counter %= textures_arr.length;
     }
 }
 class Player {
@@ -207,11 +215,10 @@ class Player {
     bob_speed = 8;
     state = "Idle";
     weapon = 0;
-    sprite_index = 0;
+    weapon_sprite_index = 0;
     normal_speed = 0.02;
     turning_speed = 0.04;
     gun_arm_speed = 0.007;
-    last_sprite_time = 0;
     hp = 100;
     hurt = false;
     hurt_frame_counter = 0;
@@ -249,6 +256,8 @@ let STATE = {
         arrowright: false
     },
     running: true,
+    start_time: 0,
+    last_frame: 0,
     message: ""
 };
 
@@ -485,18 +494,42 @@ function render_walls(){
     }
 }
 
-function render_weapon(ctime){
+function update_weapon(ctime, delta){
     const Player = STATE.Player;
-    const Weapon_Slide = TEXTURES.Weapons[WEAPONS[Player.weapon].name][Player.state == "Switch" ? "Reload": Player.state];
-
-    let time;
+    const weapon_index = (Player.state == "Switch" && 40 <= Player.weapon_sprite_index) ? (Player.weapon+1) % WEAPONS.length: Player.weapon;
+    const Weapon_Slide = TEXTURES.Weapons[WEAPONS[weapon_index].name][Player.state == "Switch" ? "Reload": Player.state];
+    let total_time;
+    if(Player.state == "Idle") return;
     if(Player.state == "Reload" || Player.state == "Switch"){
-        time = WEAPONS[Player.weapon].reload_time;
+        total_time = WEAPONS[Player.weapon].reload_time;
     }
     else if(Player.state == "Fire"){
-        time = WEAPONS[Player.weapon].fire_time;
+        total_time = WEAPONS[Player.weapon].fire_time;
     }
-    const Weapon = Weapon_Slide[Player.sprite_index % Weapon_Slide.length].img; 
+    // let seconds_per_frame = (total_time * 1000) / Weapon_Slide.length;
+    let frame_inc = Math.floor((Weapon_Slide.length * delta) / (total_time * 1000));
+    Player.weapon_sprite_index  += frame_inc;
+
+    if(Player.weapon_sprite_index >= Weapon_Slide.length){
+        Player.weapon_sprite_index = 0;
+        if(Player.state === "Reload"){
+            BULLETS[Player.weapon][0] = BULLETS[Player.weapon][1]; 
+        }
+        if(Player.state == "Switch"){
+            Player.weapon++;
+            Player.weapon = Player.weapon % WEAPONS.length;
+        }
+        Player.speed = Player.normal_speed;
+        Player.state = "Idle";
+    }
+    Player.weapon_sprite_index = Player.weapon_sprite_index % Weapon_Slide.length; 
+}
+
+function render_weapon(ctime){
+    const Player = STATE.Player;
+    const weapon_index = (Player.state == "Switch" && 40 <= Player.weapon_sprite_index) ? (Player.weapon+1) % WEAPONS.length: Player.weapon;
+    const Weapon_Slide = TEXTURES.Weapons[WEAPONS[weapon_index].name][Player.state == "Switch" ? "Reload": Player.state];
+    const Weapon = Weapon_Slide[Player.weapon_sprite_index].img; 
     let bob_x = Math.sin(Player.bob_time) * 5;
     let bob_y = Math.abs(Math.sin(Player.bob_time)) * 10; 
     const scale = 0.6;
@@ -510,22 +543,6 @@ function render_weapon(ctime){
         applied_w,
         applied_h 
     )
-    let seconds_per_frame = (time * 1000) / Weapon_Slide.length;
-    if(seconds_per_frame < ctime - Player.last_sprite_time ){
-        Player.sprite_index++;
-        Player.last_sprite_time = ctime;
-    }
-    if(Player.sprite_index >= 40 && Player.state == "Switch"){
-        Player.weapon = (Player.weapon+1) % WEAPONS.length; 
-        Player.state = "Reload"
-    }
-    if(Player.sprite_index >= Weapon_Slide.length){
-        Player.sprite_index = 0;
-        if(Player.state === "Fire" || Player.state === "Reload"){
-            Player.speed = Player.normal_speed;
-            Player.state = "Idle";
-        }
-    }
 }
 
 function lines_intersect_2d(p0, p1, p2, p3) {
@@ -625,13 +642,13 @@ function render_enemies(){
         };
     }
 }
-function update_enemies(ctime){
+function update_enemies(ctime, delta){
     const Player = STATE.Player;
     const LOCK_RANGE = 2;
     const FIRE_RANGE = 1.5;
     Player.hurt = false;
     for(let e of STATE.Enemy){
-        e.update_sprite();
+        e.update_sprite(delta);
         if(e.mode == "DIE" || e.dead) continue;
         if(e.dead) continue;
 
@@ -642,15 +659,19 @@ function update_enemies(ctime){
             if(Player.position.dist_sq(e.pos) < p_to_e_ray.dist*p_to_e_ray.dist){
                 e.dir_vector = p_to_e_vector;
                 if(e.dist_sq_from_player < FIRE_RANGE * FIRE_RANGE){
-                    e.mode = "FIRE"
+                    if(e.mode != "FIRE"){
+                        e.frame_counter = 0;
+                        e.mode = "FIRE"
+                    }
                 }
-                else{
+                else if(e.mode != "WALK"){
                     e.reach = Player.position;
                     e.mode = "WALK"
+                    e.frame_counter = 0;
                     e.speed = e.locked_speed;
                 }
             }
-            else{
+            else if(e.mode != "IDLE"){
                 e.mode = "IDLE";
                 const duration = 0 *  1000;
                 e.next_walk_start = ctime + duration;
@@ -715,6 +736,15 @@ function handle_fire(ctime){
             }
 
         }
+        // DECREMENT AVAIL BULLETS;
+        BULLETS[Player.weapon][0]--;
+        if(BULLETS[Player.weapon][0] <= 0){
+            BULLETS[Player.weapon][0] = BULLETS[Player.weapon][1];
+            // RELOAD HERE;
+            Player.state = "Reload";
+            Player.weapon_sprite_index = 0;
+            Player.speed = Player.gun_arm_speed;
+        }
         Player.can_fire = false;
         Player.cant_fire_until = ctime + weapon.rof * 1000; 
     }
@@ -744,9 +774,9 @@ function render_player(){
     ctx.fillStyle = "rgba(200, 0, 0, 1)"      
     ctx.fillRect(0, 80 + h - fill_px, 15, fill_px)
 }
-function update_player(ctime){
+function update_player(ctime, delta){
     const Player = STATE.Player;
-    const delta = (ctime - last_frame)/1000;
+    delta /= 1000;
     let new_pos;
 
     if(["keya", "keyd", "keyw", "keys"].map((key) => STATE.keys[key]).some(Boolean)) 
@@ -772,24 +802,29 @@ function update_player(ctime){
         }
         if(key == "keyr" && value){
             Player.state = "Reload"
+            Player.weapon_sprite_index = 0;
             Player.speed = Player.gun_arm_speed;
         }
         if(key == "keyq" && value){
             Player.state = "Switch"
+            Player.weapon_sprite_index = 0;
             Player.speed = Player.gun_arm_speed;
         }
     }
     if(Player.trying_fire){
         if(Player.can_fire || (!Player.can_fire && Player.cant_fire_until < ctime)){
-            Player.can_fire = true;
-            Player.state = "Fire"
-            Player.speed = Player.gun_arm_speed;
-            // recoil
-            const recoil = WEAPONS[Player.weapon].recoil;
-            let rand = Math.random()*recoil - recoil/2;
-            Player.dir += rand * delta * 60;
-            Player.plane = Player.plane.rotate(rand * delta * 60);
-            new_pos = Player.position.sub(Player.dir_vector.scale(0.002 * 60 * delta))
+            if(Player.state !== "Fire" && Player.state !== "Reload" && Player.state !== "Switch") Player.weapon_sprite_index = 0;
+            if(Player.state !== "Reload" && Player.state !== "Switch"){
+                Player.can_fire = true;
+                Player.state = "Fire"
+                Player.speed = Player.gun_arm_speed;
+                // recoil
+                const recoil = WEAPONS[Player.weapon].recoil;
+                let rand = Math.random()*recoil - recoil/2;
+                Player.dir += rand * delta * 60;
+                Player.plane = Player.plane.rotate(rand * delta * 60);
+                new_pos = Player.position.sub(Player.dir_vector.scale(0.002 * 60 * delta))
+            }
         }
     }
     if(new_pos){
@@ -806,17 +841,26 @@ function update_player(ctime){
         }
     }
 }
-let last_frame = 0;
-function game_loop(ctime){
+function render_stats(ctime, delta){
+    const Player = STATE.Player;
+    ctx.font = "15px serif";
+    ctx.fillStyle = "#ff0000"; 
+    ctx.textAlign = "end";  
+    ctx.textBaseline = "top"; 
+    const fps = Math.floor(1000/delta);
+    const bullet_stats = BULLETS[Player.weapon];
+    ctx.fillText(`${bullet_stats[0]} / ${bullet_stats[1]} | FPS: ${fps}`, canvas.width - 2, 2);    
+
+} function game_loop(ctime){
     if(!STATE.running){
         show_end_screen();
         return;
     }
-
+    const delta = ctime - STATE.last_frame;
     ctx.fillStyle = 'rgb(20, 0, 20)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);  
+    update_player(ctime, delta)
 
-    update_player(ctime)
     // Ray casting
     STATE.ray_hits = [];
     for(let x = 0; x < canvas.width; x++) {
@@ -828,15 +872,17 @@ function game_loop(ctime){
             throw new Error("Ray casting failed for some reason.")
         }
     }
-    update_enemies(ctime)
+    update_enemies(ctime, delta)
+    update_weapon(ctime, delta)
     handle_fire(ctime);
     render_floor();
     render_walls();
     render_enemies();
     render_player();
     render_weapon(ctime);
+    render_stats(ctime, delta);
     minimap(75, 75)
-    last_frame = ctime;
+    STATE.last_frame = ctime;
     requestAnimationFrame(game_loop)
 }
 
@@ -912,13 +958,15 @@ async function main(){
     ];
     COLS = STATE.Scene.length;
     ROWS = STATE.Scene[0].length;
-    STATE.Enemy = new Array(20).fill("").map(e => new Enemy(Math.random() * COLS, Math.random() * ROWS)),
-    // STATE.Scene[5][4] = "#ffaf00";
-    // for(let i = 0; i < 10; ++i)[
-    //     const x = Math.floor(Math.random() * 9);
-    //     const y = Math.floor(Math.random() * 9);
-    //     STATE.Scene[y][x] = "#ffaf00";
-    // ]
+    for(let i = 0; i < 20; ++i){
+        let x, y;
+        do {
+            x = Math.random()*COLS;
+            y = Math.random()*ROWS;
+        } while(STATE.Scene[Math.floor(y)][Math.floor(x)]);
+        STATE.Enemy.push(new Enemy(x, y));
+    }
+    STATE.start_time = Date.now();
     requestAnimationFrame(game_loop)
 };
 main();
