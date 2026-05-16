@@ -13,38 +13,42 @@ class Sprite{
 
 let TEXTURES_COLLECTION = {
     floor: [
-        new Sprite("sprites/floor.png"),
+        new Sprite("sprites/floor.webp"),
     ],
     wall: [
-        new Sprite("sprites/wall.png"),
-        new Sprite("sprites/wall-2.png"),
+        new Sprite("sprites/wall-1.webp"),
+        new Sprite("sprites/wall-2.webp"),
+        new Sprite("sprites/wall-3.webp"),
+        new Sprite("sprites/wall-4.webp"),
+        new Sprite("sprites/wall-5.webp"),
+        new Sprite("sprites/wall-6.webp"),
+        new Sprite("sprites/wall-7.webp"),
+        new Sprite("sprites/wall-8.webp"),
+        new Sprite("sprites/wall-9.webp"),
     ],
     "shotgun-idle": [
-        new Sprite("sprites/shotgun-idle.png"),
+        new Sprite("sprites/shotgun-idle.webp"),
     ],
     "shotgun-fire": new Array(10).fill("").map((_, k)=> {
-         return (new Sprite("sprites/SG-Fire/" + (k).toString() + ".png"));
+         return (new Sprite("sprites/SG-Fire/" + (k).toString() + ".webp"));
     }),
     "shotgun-reload": new Array(61).fill("").map((_, k)=> {
-         return (new Sprite("sprites/SG-Reload/" + (k).toString().padStart(4, '0') + ".png"));
+         return (new Sprite("sprites/SG-Reload/" + (k).toString().padStart(4, '0') + ".webp"));
     }),
     "ar-idle": [
-        new Sprite("sprites/ar-idle.png"),
+        new Sprite("sprites/ar-idle.webp"),
     ],
     "ar-fire": new Array(7).fill("").map((_, k)=> {
-         return (new Sprite("sprites/AR-Fire/" + (k).toString() + ".png"));
+         return (new Sprite("sprites/AR-Fire/" + (k).toString() + ".webp"));
     }),
     "ar-reload": new Array(61).fill("").map((_, k)=> {
-         return (new Sprite("sprites/AR-Reload/" + (k).toString().padStart(4, '0') + ".png"));
-    }),
-    "enemy-idle": new Array(61).fill("").map((_, k)=> {
-         return (new Sprite("sprites/Enemy/IDLEING/S/STORMTROOPER" + (k).toString().padStart(4, '0') + ".png"));
+         return (new Sprite("sprites/AR-Reload/" + (k).toString().padStart(4, '0') + ".webp"));
     }),
     "hurt": new Array(7).fill("").map((_, k)=> {
-         return (new Sprite("sprites/Hurt/" + (k).toString() + ".png"));
+         return (new Sprite("sprites/Hurt/" + (k).toString() + ".webp"));
     }),
-    "Enemy-FIRING": new Array(9).fill("").map((_, k) =>  new Sprite("sprites/Enemy/FIRING/STORMTROOPER" + (k).toString().padStart(4, '0') + ".png")),
-    "Enemy-FALLING": new Array(61).fill("").map((_, k) => new Sprite("sprites/Enemy/FALLING/STORMTROOPER" + (k).toString().padStart(4, '0') + ".png"))
+    "Enemy-FIRING": new Array(9).fill("").map((_, k) =>  new Sprite("sprites/Enemy/FIRING/STORMTROOPER" + (k).toString().padStart(4, '0') + ".webp")),
+    "Enemy-FALLING": new Array(61).fill("").map((_, k) => new Sprite("sprites/Enemy/FALLING/STORMTROOPER" + (k).toString().padStart(4, '0') + ".webp"))
 };
 
 // LOAD ENEMY SPRITES
@@ -54,7 +58,7 @@ for(state of ENEMY_STATE){
     for(dir of DIRECTIONS){
         TEXTURES_COLLECTION[`Enemy-${state[0]}-${dir}`] = [];
         for(let x = 1; x <= state[1]; x++){
-            TEXTURES_COLLECTION[`Enemy-${state[0]}-${dir}`].push(new Sprite(`sprites/Enemy/${state[0]}/${dir}/STORMTROOPER${(x).toString().padStart(4, '0')}.png`));
+            TEXTURES_COLLECTION[`Enemy-${state[0]}-${dir}`].push(new Sprite(`sprites/Enemy/${state[0]}/${dir}/STORMTROOPER${(x).toString().padStart(4, '0')}.webp`));
         }
     }
 }
@@ -252,11 +256,11 @@ let STATE = {
         keyd: false,
         keyr: false,
         keyq: false,
+        keyb: false,
         arrowleft: false,
         arrowright: false
     },
     running: true,
-    start_time: 0,
     last_frame: 0,
     message: ""
 };
@@ -384,10 +388,11 @@ addEventListener("mouseup", e => {
     }
 });
 function minimap(w, h){
+    const block_captured = 8;
     ctx.fillStyle = "rgba(10, 10, 10, 0.8)";
     ctx.fillRect(0, 0, w, h);
     ctx.save()
-    ctx.scale(w/8, h/8);
+    ctx.scale(w/block_captured, h/block_captured);
     // ctx.scale(canvas.width/COLS, canvas.height/ROWS);
     ctx.lineWidth = 0.1;
 
@@ -399,8 +404,8 @@ function minimap(w, h){
     const row_start = Math.floor(Math.max(0, P.position.x - 4))
     const col_start = Math.floor(Math.max(0, P.position.y - 4))
     const adjust = ({x, y}) => ({x: x - row_start, y: y - col_start})
-    for(let row = row_start, x = 0; row < Math.min(ROWS, row_start + 8); ++row, ++x){
-        for(let col = col_start, y = 0; col < Math.min(COLS, col_start + 8); ++col, ++y){
+    for(let row = row_start, x = 0; row < Math.min(ROWS, row_start + block_captured); ++row, ++x){
+        for(let col = col_start, y = 0; col < Math.min(COLS, col_start + block_captured); ++col, ++y){
             ctx.fillStyle = "grey";
             if(STATE.Scene[col][row]) ctx.fillRect(row - row_start, col - col_start, 1, 1);
         }
@@ -416,13 +421,13 @@ function minimap(w, h){
 
     for(hit of STATE.ray_hits){
         const cord = adjust(hit.hit_cords);
-        if(cord.x <  8 && cord.y < 8) {
+        if(cord.x <  block_captured && cord.y < block_captured) {
             draw_circle(cord, 0.05, "cyan");
         }
     } 
     for(let e of STATE.Enemy){
         const cord = adjust(e.pos);
-        if(!e.dead && cord.x <  8 && cord.y < 8) {
+        if(!e.dead && cord.x <  block_captured && cord.y < block_captured) {
             draw_circle(cord, 0.2, "red");
             draw_line(cord, adjust(e.pos.add(e.dir_vector)), "yellow");
         }
@@ -436,14 +441,15 @@ function render_floor(){
     const image_data = ctx.createImageData(canvas.width, canvas.height);
     const buf = image_data.data; // Uint8ClampedArray, 4 bytes per pixel
     let start = (canvas.height)/2;
-    let max_vision = 1;
+    let max_vision = 2;
     const left_fov = Player.dir_vector.add(Player.plane.scale(-1)).normalize();
     const right_fov = Player.dir_vector.add(Player.plane).normalize();
     for(let y = start + 1; y <= canvas.height; y += 1){
         let ray_dist = ((start) / (y - start)) 
         let left_point = Player.position.add(left_fov.scale(ray_dist)); 
         let right_point = Player.position.add(right_fov.scale(ray_dist)); 
-        let brightness_coeff = ((y - start)/start) * max_vision; 
+        let darkness_coeff = Math.min((ray_dist/max_vision) ** (1/2), 0.98); 
+        let brightness_coeff = 1 - darkness_coeff; 
         for(let x = 0; x < canvas.width; x += 1){
             let brightness = brightness_coeff * Math.abs(Math.abs(canvas.width/2 - x) / (canvas.width/2) - 1) ** 2
             let t = x/canvas.width;
@@ -472,7 +478,7 @@ function render_walls(){
     for(let i = 0; i < canvas.width; i++){
         let hit = STATE.ray_hits[i];
         if(hit.block){
-            const texture = TEXTURES.Walls[STATE.Scene[hit.block.y][hit.block.x]].img;
+            const texture = TEXTURES.Walls[STATE.Scene[hit.block.y][hit.block.x]-1].img;
             let texture_x = hit.side == "HORIZONTAL" ? hit.hit_text_cords.x - hit.block.x : hit.hit_text_cords.y - hit.block.y;
             texture_x *= texture.width;
             const aspect_correction = center_hit.perp_dist / center_hit.dist;
@@ -486,10 +492,10 @@ function render_walls(){
             }
 
             // darken based on distance
-            let max_vision = 3;
+            let max_vision = 2;
             let darkness_coeff = Math.min((hit.dist/max_vision) ** (1/2), 0.98); 
             ctx.fillStyle = `rgba(0, 0, 0, ${darkness_coeff})`;
-            ctx.fillRect(x, y-1, 1, wall_height+1);
+            ctx.fillRect(x, y-1, 1, wall_height+2);
         }
     }
 }
@@ -604,24 +610,25 @@ function render_enemies(){
                 const dir_to_cast = Player.dir_vector.add(Player.plane.scale(cut_plane_in_ratio - 1));
                 const pos = cast_ray(Player.position, dir_to_cast)
                 if(dist <= pos.dist){
-                    ctx_off.clearRect(0, 0, offscreen.width, offscreen.height);
+                    let max_vision = 1; 
+                    let darkness_coeff = Math.min((max_vision/dist) ** (2), 1); 
+
                     const aspect_correction = center_hit.perp_dist / center_hit.dist;
                     let sp_h = Math.ceil((canvas.height * aspect_correction) / b.dot(Player.dir_vector));
                     let sp_w = Math.ceil(sp_h*1.5);
                     const sx = cut_plane_in_ratio * canvas.width/2 - sp_w/2;
                     const sy = canvas.height/2 - sp_h/2;
                     ctx.drawImage(texture, t_x, t_y, t_w, t_h, sx, sy, sp_w, sp_h)
-                    offscreen.width = sp_w;
-                    offscreen.height = sp_h;
-                    ctx_off.drawImage( texture, t_x, t_y, t_w, t_h, 0, 0, sp_w, sp_h );
-                    let max_vision = 1; 
-                    let darkness_coeff = Math.min((max_vision/dist) ** (2), 1); 
-
                     ctx.fillStyle = `rgba(0, 0, 255, ${Math.min(1,darkness_coeff)})`;
                     ctx.font = `bold ${Math.floor(sp_w/6)}px Arial`;
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
                     ctx.fillText(e.hp, sx + sp_w/2, sy - 10);
+
+                    offscreen.width = sp_w;
+                    offscreen.height = sp_h;
+                    ctx_off.clearRect(0, 0, offscreen.width, offscreen.height);
+                    ctx_off.drawImage(texture, t_x, t_y, t_w, t_h, 0, 0, sp_w, sp_h);
                     const enemy_data = ctx_off.getImageData(0, 0, offscreen.width, offscreen.height).data;
                     const saved = ctx.getImageData(0, 0, canvas.width, canvas.height).data;                   
                     let offset = Math.floor(sy) * canvas.width + Math.floor(sx);
@@ -630,7 +637,7 @@ function render_enemies(){
                         let g = enemy_data[ptr + 1];
                         let b = enemy_data[ptr + 2];
                         let a = enemy_data[ptr + 3];
-                        if(0<r || 0<g || 0<b || 0<a){
+                        if(10 < r || 10 < g || 10 < b || 10 < a){
                             let canvas_ptr = (offset + (Math.floor(pixel/offscreen.width) * canvas.width) + Math.floor(pixel % offscreen.width))*4;
                             saved[canvas_ptr + 3] = a * darkness_coeff;
                         }
@@ -810,6 +817,9 @@ function update_player(ctime, delta){
             Player.weapon_sprite_index = 0;
             Player.speed = Player.gun_arm_speed;
         }
+        if(key == "keyb" && value){
+            setup_new_game();
+        }
     }
     if(Player.trying_fire){
         if(Player.can_fire || (!Player.can_fire && Player.cant_fire_until < ctime)){
@@ -886,6 +896,25 @@ function render_stats(ctime, delta){
     requestAnimationFrame(game_loop)
 }
 
+function setup_new_game(){
+    STATE = {
+        ...STATE,
+        Enemy: [],
+        Player: new Player(new Vector2(6, 5.5), 0),
+        ray_hits: [],
+        running: true,
+        last_frame: 0,
+        message: ""
+    }
+    for(let i = 0; i < 20; ++i){
+        let x, y;
+        do {
+            x = Math.random()*COLS;
+            y = Math.random()*ROWS;
+        } while(STATE.Scene[Math.floor(y)][Math.floor(x)]);
+        STATE.Enemy.push(new Enemy(x, y));
+    }
+}
 async function main(){
     for([key, arr] of Object.entries(TEXTURES_COLLECTION)){
         console.log(key)
@@ -898,8 +927,7 @@ async function main(){
     TEXTURES.Weapons[WEAPONS[1].name].Idle = TEXTURES_COLLECTION["ar-idle"];
     TEXTURES.Weapons[WEAPONS[1].name].Fire = TEXTURES_COLLECTION["ar-fire"];
     TEXTURES.Weapons[WEAPONS[1].name].Reload = TEXTURES_COLLECTION["ar-reload"];
-    TEXTURES.Walls = TEXTURES.Walls.concat(...new Array(4).fill(TEXTURES_COLLECTION["wall"][0]));
-    TEXTURES.Walls = TEXTURES.Walls.concat(...new Array(5).fill(TEXTURES_COLLECTION["wall"][1]));
+    TEXTURES.Walls = TEXTURES_COLLECTION["wall"];
     TEXTURES.Floor = TEXTURES_COLLECTION["floor"][0];
     TEXTURES.Hurt = TEXTURES_COLLECTION["hurt"];
     
@@ -923,50 +951,43 @@ async function main(){
     const ctx_off = offscreen.getContext("2d");
     ctx_off.drawImage(floor, 0, 0);
     STATE.floor = ctx_off.getImageData(0, 0, floor.width, floor.height).data;
-    STATE = {
-        ...STATE,
-        Scene: Array(ROWS).fill("").map(()=>Array(COLS).fill(0)),
-        Player: new Player(new Vector2(6, 5.5), 0),
-        // Player: new Player(new Vector2(Math.random()*10, Math.random()*10), 1e-3),
-        ray_hits: [],
-    }
     STATE.Scene = [
-      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,7,7,7,7,7,7,7,7],
-      [4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,7,0,0,0,0,0,0,7],
-      [4,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,7],
-      [4,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,7],
-      [4,0,3,0,0,0,0,0,0,0,0,0,0,0,0,0,7,0,0,0,0,0,0,7],
-      [4,0,4,0,0,0,0,5,5,5,5,5,5,5,5,5,7,7,0,7,7,7,7,7],
-      [4,0,5,0,0,0,0,5,0,5,0,5,0,5,0,5,7,0,0,0,7,7,7,1],
-      [4,0,6,0,0,0,0,5,0,0,0,0,0,0,0,5,7,0,0,0,0,0,0,8],
-      [4,0,7,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,7,7,7,1],
-      [4,0,8,0,0,0,0,5,0,0,0,0,0,0,0,5,7,0,0,0,0,0,0,8],
-      [4,0,0,0,0,0,0,5,0,0,0,0,0,0,0,5,7,0,0,0,7,7,7,1],
-      [4,0,0,0,0,0,0,5,5,5,5,0,5,5,5,5,7,7,7,7,7,7,7,1],
-      [6,6,6,6,6,6,6,6,6,6,6,0,6,6,6,6,6,6,6,6,6,6,6,6],
-      [8,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4],
-      [6,6,6,6,6,6,0,6,6,6,6,0,6,6,6,6,6,6,6,6,6,6,6,6],
-      [4,4,4,4,4,4,0,4,4,4,6,0,6,2,2,2,2,2,2,2,3,3,3,3],
-      [4,0,0,0,0,0,0,0,0,4,6,0,6,2,0,0,0,0,0,2,0,0,0,2],
-      [4,0,0,0,0,0,0,0,0,0,0,0,6,2,0,0,5,0,0,2,0,0,0,2],
-      [4,0,0,0,0,0,0,0,0,4,6,0,6,2,0,0,0,0,0,2,2,0,2,2],
-      [4,0,6,0,6,0,0,0,0,4,6,0,0,0,0,0,5,0,0,0,0,0,0,2],
-      [4,0,0,5,0,0,0,0,0,4,6,0,6,2,0,0,0,0,0,2,2,0,2,2],
-      [4,0,6,0,6,0,0,0,0,4,6,0,6,2,0,0,5,0,0,2,0,0,0,2],
-      [4,0,0,0,0,0,0,0,0,4,6,0,6,2,0,0,0,0,0,2,0,0,0,2],
-      [4,4,4,4,4,4,4,4,4,4,1,1,1,2,2,2,2,2,2,3,3,3,3,3]
+      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,8,8,1,1,1],
+      [1,0,7,0,0,5,0,0,0,0,0,0,0,0,0,7,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+      [1,0,0,0,0,0,0,4,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,9,1],
+      [1,0,0,0,0,0,0,0,0,0,0,0,0,0,3,0,0,0,0,0,0,0,0,4,0,0,0,0,0,0,0,1],
+      [6,0,0,4,2,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,7,1,0,0,0,7],
+      [1,0,0,3,0,0,0,3,0,0,0,0,0,0,1,0,0,0,0,0,6,0,6,0,0,0,2,0,0,0,0,1],
+      [1,0,0,0,0,0,0,1,0,0,0,0,0,0,2,0,0,0,3,0,1,0,1,0,0,0,1,0,0,0,0,1],
+      [1,0,0,1,0,0,0,1,0,0,0,0,0,0,1,0,0,0,0,0,1,0,1,0,0,0,0,0,0,6,1,1],
+      [1,6,0,1,1,3,1,5,0,0,0,0,0,0,3,6,0,4,1,1,1,0,7,1,0,7,1,0,8,1,0,1],
+      [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1],
+      [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,0,0,0,0,0,0,0,0,1],
+      [1,0,0,2,0,0,0,0,0,0,0,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+      [1,0,0,0,0,1,1,5,1,0,1,1,1,1,0,0,0,0,1,5,1,0,0,0,0,6,0,0,0,0,0,1],
+      [1,0,0,0,0,1,0,0,0,0,0,0,0,3,0,0,0,0,1,0,0,0,0,0,0,1,0,0,0,0,0,1],
+      [1,0,0,0,0,1,0,0,0,0,0,0,0,4,0,0,0,0,1,0,0,0,0,0,0,8,0,0,0,0,0,1],
+      [1,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,1,0,9,0,0,0,1],
+      [1,1,0,2,1,4,0,0,0,0,0,0,0,1,0,1,1,0,2,0,1,6,0,0,0,7,1,1,2,5,0,1],
+      [1,0,0,0,1,0,1,0,0,0,0,0,0,5,0,1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,1],
+      [1,0,0,0,0,0,1,0,0,0,0,0,0,1,0,5,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,1],
+      [1,0,0,0,0,0,1,1,0,8,8,0,1,1,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+      [1,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,9,0,0,0,0,0,1],
+      [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,4,0,0,0,0,0,0,0,0,1],
+      [1,0,7,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+      [1,0,0,0,1,4,3,0,1,0,1,0,1,3,1,0,0,0,0,0,0,0,2,1,0,1,1,0,0,0,0,1],
+      [1,0,0,0,1,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,7,0,0,0,0,1],
+      [1,0,0,0,5,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,1],
+      [1,0,5,0,4,0,0,0,0,0,0,0,0,0,4,0,0,0,0,0,0,0,3,0,0,0,1,0,0,0,0,1],
+      [1,0,0,0,1,1,0,8,1,0,3,1,0,1,1,0,1,0,0,1,0,1,0,1,0,4,1,0,1,1,0,1],
+      [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+      [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,0,1],
+      [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,0,1],
+      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
     ];
     COLS = STATE.Scene.length;
     ROWS = STATE.Scene[0].length;
-    for(let i = 0; i < 20; ++i){
-        let x, y;
-        do {
-            x = Math.random()*COLS;
-            y = Math.random()*ROWS;
-        } while(STATE.Scene[Math.floor(y)][Math.floor(x)]);
-        STATE.Enemy.push(new Enemy(x, y));
-    }
-    STATE.start_time = Date.now();
+    setup_new_game();
     requestAnimationFrame(game_loop)
 };
 main();
