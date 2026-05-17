@@ -456,7 +456,7 @@ function render_floor(){
         let darkness_coeff = Math.min((ray_dist/max_vision) ** (1/2), 0.98); 
         let brightness_coeff = 1 - darkness_coeff; 
         for(let x = 0; x < canvas.width; x += 1){
-            let brightness = brightness_coeff 
+            let brightness = brightness_coeff * Math.abs(Math.abs(canvas.width/2 - x) / (canvas.width/2) - 1) ** 2
             let t = x/canvas.width;
             let world_x = left_point.x + (right_point.x - left_point.x) * t;
             let world_y = left_point.y + (right_point.y - left_point.y) * t;
