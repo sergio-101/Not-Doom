@@ -446,7 +446,7 @@ function render_floor(){
     const image_data = ctx.createImageData(canvas.width, canvas.height);
     const buf = image_data.data; // Uint8ClampedArray, 4 bytes per pixel
     let start = (canvas.height)/2;
-    let max_vision = 1;
+    let max_vision = 2;
     const left_fov = Player.dir_vector.add(Player.plane.scale(-1)).normalize();
     const right_fov = Player.dir_vector.add(Player.plane).normalize();
     for(let y = start + 1; y <= canvas.height; y += 1){
