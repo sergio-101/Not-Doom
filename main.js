@@ -394,12 +394,11 @@ addEventListener("mouseup", e => {
     }
 });
 function minimap(w, h){
-    const block_captured = COLS;
+    const block_captured = 8;
     ctx.fillStyle = "rgba(10, 10, 10, 0.8)";
     ctx.fillRect(0, 0, w, h);
     ctx.save()
     ctx.scale(w/block_captured, h/block_captured);
-    // ctx.scale(canvas.width/COLS, canvas.height/ROWS);
     ctx.lineWidth = 0.1;
 
     let Player = STATE.Player;
@@ -447,7 +446,7 @@ function render_floor(){
     const image_data = ctx.createImageData(canvas.width, canvas.height);
     const buf = image_data.data; // Uint8ClampedArray, 4 bytes per pixel
     let start = (canvas.height)/2;
-    let max_vision = 2;
+    let max_vision = 1;
     const left_fov = Player.dir_vector.add(Player.plane.scale(-1)).normalize();
     const right_fov = Player.dir_vector.add(Player.plane).normalize();
     for(let y = start + 1; y <= canvas.height; y += 1){
@@ -457,7 +456,7 @@ function render_floor(){
         let darkness_coeff = Math.min((ray_dist/max_vision) ** (1/2), 0.98); 
         let brightness_coeff = 1 - darkness_coeff; 
         for(let x = 0; x < canvas.width; x += 1){
-            let brightness = brightness_coeff * Math.abs(Math.abs(canvas.width/2 - x) / (canvas.width/2) - 1) ** 2
+            let brightness = brightness_coeff 
             let t = x/canvas.width;
             let world_x = left_point.x + (right_point.x - left_point.x) * t;
             let world_y = left_point.y + (right_point.y - left_point.y) * t;
@@ -797,7 +796,7 @@ function render_player(){
 function update_player(ctime, delta){
     const Player = STATE.Player;
     delta /= 1000;
-    let new_pos;
+    let new_pos = Player.position;
 
     if(["keya", "keyd", "keyw", "keys"].map((key) => STATE.keys[key]).some(Boolean)) 
         Player.bob_time += Player.bob_speed * delta;
@@ -809,16 +808,20 @@ function update_player(ctime, delta){
         }
         Player.dir_vector = new Vector2(Math.cos(Player.dir), Math.sin(Player.dir));
         if(key == "keyw" && value){
-            new_pos = Player.position.add(Player.dir_vector.scale(Player.speed * 60 * delta))
+            console.log("w")
+            new_pos = new_pos.add(Player.dir_vector.scale(Player.speed * 60 * delta))
         }
         if(key == "keys" && value){
-            new_pos = Player.position.sub(Player.dir_vector.scale(Player.speed * 60 * delta))
+            console.log("s")
+            new_pos = new_pos.sub(Player.dir_vector.scale(Player.speed * 60 * delta))
         }
         if(key == "keya" && value){
-            new_pos = Player.position.add(Player.dir_vector.rotate(-Math.PI/2).scale(Player.speed * 60 * delta))
+            console.log("a")
+            new_pos = new_pos.add(Player.dir_vector.rotate(-Math.PI/2).scale(Player.speed * 60 * delta))
         }
         if(key == "keyd" && value){
-            new_pos = Player.position.add(Player.dir_vector.rotate(Math.PI/2).scale(Player.speed * 60 * delta))
+            console.log("d")
+            new_pos = new_pos.add(Player.dir_vector.rotate(Math.PI/2).scale(Player.speed * 60 * delta))
         }
         if(key == "keyr" && value){
             Player.state = "Reload"
@@ -937,6 +940,8 @@ function setup_new_game(){
     STATE.enemy_count = STATE.Enemy.length;
 }
 async function main(){
+    STATE.message = "LOADING ASSETS"
+    show_end_screen();
     for([key, arr] of Object.entries(TEXTURES_COLLECTION)){
         console.log(key)
         TEXTURES_COLLECTION[key] = await Promise.all(arr); 
