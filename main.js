@@ -150,10 +150,11 @@ class Enemy {
     dir_vector;
     mode = "IDLE";
     frame_counter = 0;
+    frame_float = 0;
     next_walk_start = 0;
-    speed = 1;
-    wandering_speed = 1.5;
-    locked_speed = 4;
+    speed = 0.5;
+    wandering_speed = 0.5;
+    locked_speed = 1;
     hp = 100;
     reach = null;
     dist_sq_from_player;
@@ -198,8 +199,9 @@ class Enemy {
         const ENEMY_DYING_DURATION = 1.5;
         const ENEMY_REGULAR_SPRITE_DURATION = 2;
         const total_time = this.mode === "DIE"? ENEMY_DYING_DURATION : ENEMY_REGULAR_SPRITE_DURATION/this.speed;
-        let frame_inc = Math.floor((textures_arr.length * delta) / (total_time * 1000));
-        this.frame_counter += frame_inc;
+        let frame_inc = (textures_arr.length * delta) / (total_time * 1000);
+        this.frame_float += frame_inc;
+        this.frame_counter = Math.floor(this.frame_float);
         if(textures_arr.length <= this.frame_counter) {
             if(this.mode == "DIE") {
                 this.dead = true;
@@ -220,6 +222,7 @@ class Player {
     state = "Idle";
     weapon = 0;
     weapon_sprite_index = 0;
+    weapon_sprite_float = 0;
     normal_speed = 0.02;
     turning_speed = 0.04;
     gun_arm_speed = 0.007;
@@ -236,6 +239,10 @@ class Player {
         this.plane = new Vector2(0, Math.tan(this.fov/2));
         this.speed = this.normal_speed;
     }
+    reset_weapon_sprite(){
+        this.weapon_sprite_index = 0;
+        this.weapon_sprite_float = 0;
+    }
 }
 
 const ctx = canvas.getContext("2d", {willReadFrequently: true} );
@@ -245,9 +252,7 @@ canvas.style.imageRendering = "pixelated";
 let COLS;
 let ROWS;
 let STATE = {
-    Enemy: [
-        // new Enemy(10.5, 2.5)
-    ],
+    Enemy: [],
     highlight: {},
     keys: {
         keya: false, 
@@ -261,7 +266,8 @@ let STATE = {
         arrowright: false
     },
     running: true,
-    last_frame: 0,
+    last_frame: null,
+    enemy_count: null,
     message: ""
 };
 
@@ -388,7 +394,7 @@ addEventListener("mouseup", e => {
     }
 });
 function minimap(w, h){
-    const block_captured = 8;
+    const block_captured = COLS;
     ctx.fillStyle = "rgba(10, 10, 10, 0.8)";
     ctx.fillRect(0, 0, w, h);
     ctx.save()
@@ -512,12 +518,11 @@ function update_weapon(ctime, delta){
     else if(Player.state == "Fire"){
         total_time = WEAPONS[Player.weapon].fire_time;
     }
-    // let seconds_per_frame = (total_time * 1000) / Weapon_Slide.length;
-    let frame_inc = Math.floor((Weapon_Slide.length * delta) / (total_time * 1000));
-    Player.weapon_sprite_index  += frame_inc;
-
+    let frame_inc = (Weapon_Slide.length * delta) / (total_time * 1000);
+    Player.weapon_sprite_float += frame_inc;
+    Player.weapon_sprite_index = Math.floor(Player.weapon_sprite_float);
     if(Player.weapon_sprite_index >= Weapon_Slide.length){
-        Player.weapon_sprite_index = 0;
+        Player.reset_weapon_sprite();
         if(Player.state === "Reload"){
             BULLETS[Player.weapon][0] = BULLETS[Player.weapon][1]; 
         }
@@ -528,7 +533,7 @@ function update_weapon(ctime, delta){
         Player.speed = Player.normal_speed;
         Player.state = "Idle";
     }
-    Player.weapon_sprite_index = Player.weapon_sprite_index % Weapon_Slide.length; 
+    Player.weapon_sprite_index %= Weapon_Slide.length;
 }
 
 function render_weapon(ctime){
@@ -655,9 +660,9 @@ function update_enemies(ctime, delta){
     const FIRE_RANGE = 1.5;
     Player.hurt = false;
     for(let e of STATE.Enemy){
-        e.update_sprite(delta);
-        if(e.mode == "DIE" || e.dead) continue;
         if(e.dead) continue;
+        e.update_sprite(delta);
+        if(e.mode == "DIE") continue;
 
         e.dist_sq_from_player = e.pos.dist_sq(Player.position);
         if(e.dist_sq_from_player < LOCK_RANGE * LOCK_RANGE){
@@ -668,12 +673,14 @@ function update_enemies(ctime, delta){
                 if(e.dist_sq_from_player < FIRE_RANGE * FIRE_RANGE){
                     if(e.mode != "FIRE"){
                         e.frame_counter = 0;
+                        e.frame_float = 0;
                         e.mode = "FIRE"
                     }
                 }
                 else if(e.mode != "WALK"){
                     e.reach = Player.position;
                     e.mode = "WALK"
+                    e.frame_float = 0;
                     e.frame_counter = 0;
                     e.speed = e.locked_speed;
                 }
@@ -682,6 +689,7 @@ function update_enemies(ctime, delta){
                 e.mode = "IDLE";
                 const duration = 0 *  1000;
                 e.next_walk_start = ctime + duration;
+                e.frame_float = 0;
                 e.frame_counter = 0;
             }
         }
@@ -694,12 +702,14 @@ function update_enemies(ctime, delta){
                 let res = cast_ray(e.pos, e.dir_vector);
                 e.reach = e.pos.add(e.dir_vector.scale(Math.random() * res.dist));
                 e.frame_counter = 0;
+                e.frame_float = 0;
             }
             if(e.mode == "WALK"){
                 if(e.pos.dist_sq(e.reach) < 0.25){
                     e.mode = "IDLE";
                     const duration = Math.floor(Math.random() * 5) *  1000;
                     e.next_walk_start = ctime + duration;
+                    e.frame_float = 0;
                     e.frame_counter = 0;
                 }
             }
@@ -737,7 +747,9 @@ function handle_fire(ctime){
                     e.hurt = true;
                     if(e.hp <= 0) {
                         e.mode = "DIE";
+                        e.frame_float = 0;
                         e.frame_counter = 0;
+                        STATE.enemy_count--;
                     }
                 }
             }
@@ -749,6 +761,7 @@ function handle_fire(ctime){
             BULLETS[Player.weapon][0] = BULLETS[Player.weapon][1];
             // RELOAD HERE;
             Player.state = "Reload";
+            Player.weapon_sprite_float = 0;
             Player.weapon_sprite_index = 0;
             Player.speed = Player.gun_arm_speed;
         }
@@ -809,12 +822,12 @@ function update_player(ctime, delta){
         }
         if(key == "keyr" && value){
             Player.state = "Reload"
-            Player.weapon_sprite_index = 0;
+            Player.reset_weapon_sprite();
             Player.speed = Player.gun_arm_speed;
         }
         if(key == "keyq" && value){
             Player.state = "Switch"
-            Player.weapon_sprite_index = 0;
+            Player.reset_weapon_sprite();
             Player.speed = Player.gun_arm_speed;
         }
         if(key == "keyb" && value){
@@ -823,7 +836,9 @@ function update_player(ctime, delta){
     }
     if(Player.trying_fire){
         if(Player.can_fire || (!Player.can_fire && Player.cant_fire_until < ctime)){
-            if(Player.state !== "Fire" && Player.state !== "Reload" && Player.state !== "Switch") Player.weapon_sprite_index = 0;
+            if(Player.state !== "Fire" && Player.state !== "Reload" && Player.state !== "Switch") {
+                Player.reset_weapon_sprite();
+            }
             if(Player.state !== "Reload" && Player.state !== "Switch"){
                 Player.can_fire = true;
                 Player.state = "Fire"
@@ -859,10 +874,15 @@ function render_stats(ctime, delta){
     ctx.textBaseline = "top"; 
     const fps = Math.floor(1000/delta);
     const bullet_stats = BULLETS[Player.weapon];
-    ctx.fillText(`${bullet_stats[0]} / ${bullet_stats[1]} | FPS: ${fps}`, canvas.width - 2, 2);    
+    ctx.fillText(`${bullet_stats[0]} / ${bullet_stats[1]} | ENEMIES LEFT: ${STATE.enemy_count} | FPS: ${fps}`, canvas.width - 2, 2);    
 
 } function game_loop(ctime){
     if(!STATE.running){
+        show_end_screen();
+        return;
+    }
+    if(STATE.enemy_count <= 0){
+        STATE.message = "YOU WON!"
         show_end_screen();
         return;
     }
@@ -899,8 +919,8 @@ function render_stats(ctime, delta){
 function setup_new_game(){
     STATE = {
         ...STATE,
-        Enemy: [],
         Player: new Player(new Vector2(6, 5.5), 0),
+        Enemy: [],
         ray_hits: [],
         running: true,
         last_frame: 0,
@@ -914,6 +934,7 @@ function setup_new_game(){
         } while(STATE.Scene[Math.floor(y)][Math.floor(x)]);
         STATE.Enemy.push(new Enemy(x, y));
     }
+    STATE.enemy_count = STATE.Enemy.length;
 }
 async function main(){
     for([key, arr] of Object.entries(TEXTURES_COLLECTION)){
